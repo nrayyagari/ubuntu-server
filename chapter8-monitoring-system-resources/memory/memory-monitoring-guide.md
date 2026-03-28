@@ -471,32 +471,229 @@ This is called **memory pooling** - apps keep a "private cache" of freed memory.
 
 ## 11. Swap & Virtual Memory
 
-### Q: What is swap?
+### Q: Why does swap exist?
 
-**Swap = disk space pretending to be RAM**
+**Early computers had a problem:**
 
 ```
-RAM full
-    │
-    ▼
-Kernel: "I need more memory!"
-        "Move some inactive pages to disk (swap)"
-        
-        RAM ──▶ Swap (slow!)
+┌─────────────────────────────────────────────┐
+│              Early System                    │
+│                                              │
+│  RAM: 4MB                                    │
+│  App1: needs 2MB                             │
+│  App2: needs 2MB                             │
+│  App3: needs 2MB   ──▶ "Out of Memory!"      │
+│                                              │
+│  What do we do? Throw away App1?             │
+└─────────────────────────────────────────────┘
+```
+
+**Solution**: Use disk as "backup memory"
+
+```
+┌─────────────────────────────────────────────┐
+│              Add Swap (Disk)                  │
+│                                              │
+│  RAM: 4MB    (fast, expensive)               │
+│  Swap: 4GB   (slow, cheap)                   │
+│                                              │
+│  "Move inactive stuff to disk"               │
+│  Free up RAM for active apps                 │
+└─────────────────────────────────────────────┘
+```
+
+### Analogy: Your Desk vs Filing Cabinet
+
+```
+┌────────────────────┐     ┌────────────────────┐
+│    Your Desk       │     │  Filing Cabinet    │
+│    (RAM)           │     │    (Swap/Disk)     │
+│                    │     │                    │
+│  Quick access      │     │  Slow access       │
+│  Limited space     │     │  Lots of space     │
+│                    │     │                    │
+│  Working papers    │     │  Old documents     │
+└────────────────────┘     └────────────────────┘
+
+When desk is full:
+- Put rarely-used papers in cabinet
+- Keep frequently-used on desk
+
+Linux does the same with RAM ↔ Swap
+```
+
+### Q: How does swap actually work?
+
+**Step 1: Page becomes inactive**
+
+```
+App has memory at 0x00400000 (some address)
+Linux: "You haven't used this in a while"
+```
+
+**Step 2: Move to swap**
+
+```
+RAM: 0x00400000 ──▶ Disk: Swap offset 0x1000
+      (page contents)    (swapped out)
+      
+Page table updated:
+0x00400000 ──▶ "Not in RAM, look in swap at offset 0x1000"
+```
+
+**Step 3: Access from swap (Slow!)**
+
+```
+App reads from 0x00400000
+CPU: "Page fault! Not in RAM!"
+Kernel: "Okay okay, let me fetch from disk..."
+       (reads from swap, slow!)
+       (puts back in RAM)
 ```
 
 ### Q: Does more swap prevent OOM?
 
 **No.** It just delays the inevitable. If you're truly out of memory, swap just means "I killed your process more slowly."
 
+| Scenario | Result |
+|----------|--------|
+| RAM full + no swap | OOM killer kills process |
+| RAM full + swap | Everything runs painfully slow |
+
+### Q: How is swap allocated? Is it manual or automated?
+
+**Two ways:**
+
+| Method | Who Does It | When |
+|--------|-------------|------|
+| **Manual** | Sysadmin creates | At setup time |
+| **Automatic** | Cloud provider | When you provision a VM |
+
+#### Method 1: Manual (Traditional)
+
+```bash
+# Step 1: Create a file (or use a partition)
+sudo fallocate -l 2G /swapfile
+
+# Step 2: Set correct permissions (must be 600!)
+sudo chmod 600 /swapfile
+
+# Step 3: Format as swap
+sudo mkswap /swapfile
+
+# Step 4: Enable it
+sudo swapon /swapfile
+
+# Step 5: Make it permanent (add to /etc/fstab)
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+```bash
+# Verify
+swapon --show
+free -h
+```
+
+#### Method 2: Cloud/Automated (Modern)
+
+**On AWS, GCP, Azure**: Swap is often **NOT configured by default**
+
+| Cloud | Default Swap | How to Add |
+|-------|--------------|------------|
+| AWS EC2 | None | Use swap file |
+| GCP | None | Use swap file |
+| Azure | None | Use swap file |
+
+**Why no default?** Cloud providers assume you provision enough RAM.
+
+#### Method 3: LVM Swap (Enterprise)
+
+```bash
+# Create LVM logical volume for swap
+sudo lvcreate -L 2G -n swap_vg vg_name
+
+# Format as swap
+sudo mkswap /dev/vg_name/swap_vg
+
+# Enable
+sudo swapon /dev/vg_name/swap_vg
+```
+
+### Q: Can you have multiple swap areas?
+
+Yes:
+
+```bash
+# Add multiple swap files
+sudo swapon /swapfile1
+sudo swapon /swapfile2
+
+# Or add multiple partitions
+swapon /dev/sda2
+swapon /dev/sdb1
+
+# See all
+swapon --show
+```
+
+**Priority matters** (higher = used first):
+
+```bash
+sudo swapon --priority 100 /swapfile
+```
+
+### Q: Is swap permanent?
+
+| Storage Type | Survives Reboot? |
+|--------------|------------------|
+| `/etc/fstab` entry | Yes |
+| `swapon` command only | No (gone after reboot) |
+
+```bash
+# Make permanent - add to /etc/fstab
+# Format: <device>  <mount point>  <type>  <options>  <dump>  <pass>
+/swapfile   none    swap    sw      0         0
+```
+
 ### Q: When should I use swap?
 
 | Scenario | Recommendation |
 |----------|-----------------|
-| Servers with ECC RAM | Minimal swap (rescue for crashes) |
-| Desktops/hybrids | Some swap (for hibernation) |
-| Containers | Swap disabled usually (let OOM kill) |
-| Production databases | NO swap (slow death is worse) |
+| Desktop with hibernation | Yes |
+| Server with < 2GB RAM | Yes |
+| Server with 8GB+ RAM (dev/test) | Optional |
+| Server with 8GB+ RAM (production) | Usually NO |
+| Containers | NO (disable swap in Kubernetes) |
+
+### Q: What is the rule of thumb for swap size?
+
+| RAM Size | Swap Recommendation |
+|----------|---------------------|
+| < 2GB | 2x RAM |
+| 2-8GB | 1x RAM |
+| 8-64GB | 0.5x RAM or none |
+| 64GB+ | Usually none |
+
+### Q: Your system - check if you have swap
+
+```bash
+free -h
+swapon --show
+```
+
+### Q: Why modern systems often disable swap?
+
+| Era | Swap Usage |
+|-----|------------|
+| 1990s | Essential (RAM was 4-16MB) |
+| 2000s | Common (RAM was 512MB-2GB) |
+| 2020s | Often disabled (RAM is 8-64GB) |
+
+**Why disable?**
+
+1. **Swap is SLOW** - disk is 1000x slower than RAM
+2. **Enough RAM** - modern servers have plenty
+3. **Better alternatives** - OOM killer is more honest
 
 ---
 
