@@ -939,3 +939,27 @@ instead of:
 - hidden slowdown
 - disk thrashing
 - delayed recovery
+
+### Q: Is high memory usage always a problem?
+
+**No. High memory usage is not the same as memory pressure.**
+
+It can be completely healthy if:
+
+- the workload is expected to use memory
+- `MemAvailable` is still healthy
+- swap is not actively being used
+- there are no OOM kills or latency issues
+
+Examples:
+
+- PostgreSQL using shared buffers
+- Java using a large heap
+- Linux using RAM for page cache
+
+The real problem is:
+
+- low `MemAvailable`
+- active swapping
+- OOM kills
+- application slowdown
