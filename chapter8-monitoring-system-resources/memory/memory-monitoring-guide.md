@@ -874,7 +874,40 @@ vmstat 1
 | Metric | Healthy | Warning | Critical |
 |--------|---------|---------|----------|
 | MemAvailable | > 1GB | < 500MB | < 100MB |
-| Swap used | 0 | Any | - |
+| Swap used | Low and stable | Growing steadily | Heavy active use |
+
+### Q: Is there a healthy memory utilization percentage?
+
+There is no single healthy RAM percentage like CPU.
+
+Linux uses spare RAM for cache, so high memory usage is often normal.
+
+- `80%` used can be fine
+- `90%` used can still be fine
+- high usage becomes a problem when available memory gets low or the system starts swapping heavily
+
+### Q: When should I worry about RAM?
+
+Worry when several of these happen together:
+
+- `MemAvailable` keeps falling and stays low
+- swap usage is growing
+- `vmstat` shows swap-in or swap-out activity (`si` / `so`)
+- applications slow down
+- the kernel logs OOM kills
+
+### Q: What is the practical rule of thumb?
+
+| Used RAM % | Meaning |
+|------------|---------|
+| `< 70%` | Usually comfortable |
+| `70-85%` | Usually still fine |
+| `85-95%` | Watch closely |
+| `> 95%` | Risky if available memory is low or swap is active |
+
+The key idea:
+
+**Healthy memory is not about a fixed percentage. It is healthy when the server still has enough available memory and is not actively swapping or hitting OOM.**
 
 ### Q: How to find which process uses most memory?
 
@@ -898,8 +931,8 @@ top (press M to sort by memory)
 │   available < 500MB?  →  Warning                   │
 │   available < 100MB?  →  Trouble!                  │
 │                                                     │
-│   swap being used?   →  Not enough RAM             │
-│   (even a little)    →  Fix it                      │
+│   swap low/stable?   →  Usually okay               │
+│   swap growing fast? →  Memory pressure            │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -927,7 +960,7 @@ dmesg | grep -i "out of memory"
 | Metric | Why It Matters |
 |--------|----------------|
 | **MemAvailable** | Real free memory for new apps |
-| **Swap used** | Not enough RAM (fix this!) |
+| **Swap trend** | Stable is okay; growing or active swapping is a warning |
 
 **Everything else** (MemFree, Cached, Buffers) - Linux handles automatically. Don't worry about it.
 
