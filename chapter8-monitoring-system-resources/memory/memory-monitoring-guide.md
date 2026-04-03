@@ -641,6 +641,38 @@ Kernel: "Okay okay, let me fetch from disk..."
 | RAM full + no swap | OOM killer kills process |
 | RAM full + swap | Everything runs painfully slow |
 
+### Q: Is using swap discouraged on modern systems?
+
+Not exactly.
+
+Modern guidance:
+- swap is **not** a replacement for enough RAM
+- a **small amount of swap** can help absorb short memory spikes
+- **heavy swap usage** usually means poor performance
+- relying on swap as your main memory strategy is discouraged
+
+### Q: Why do some teams avoid swap?
+
+- disk is much slower than RAM
+- latency-sensitive apps can become very slow when pages are swapped out
+- heavy swap can hide a memory problem until the whole system becomes sluggish
+
+### Q: Why do some teams still keep some swap?
+
+- it gives the kernel breathing room during brief pressure spikes
+- it can reduce the chance of immediate OOM in some cases
+- it can hold rarely used pages while active pages stay in RAM
+
+### Q: What is the practical rule of thumb?
+
+- **No swap at all**: faster OOM when memory spikes
+- **Small, controlled swap**: often useful
+- **Constant swapping**: a sign the system needs more RAM or tuning
+
+So the right conclusion is:
+
+**Using swap is not discouraged. Depending heavily on swap is discouraged.**
+
 ### Q: How is swap allocated? Is it manual or automated?
 
 **Two ways:**
