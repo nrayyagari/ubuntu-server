@@ -7,6 +7,7 @@
 4. [Common Snap Packages](#4-common-snap-packages)
 5. [APT Install Behavior](#5-apt-install-behavior)
 6. [apt autoremove](#6-apt-autoremove)
+7. [apt vs snap vs flatpak](#7-apt-vs-snap-vs-flatpak)
 
 ---
 
@@ -158,3 +159,27 @@ sudo apt autoremove --dry-run
 ```
 
 This shows what would be removed without actually removing it.
+
+---
+
+## 7. apt vs snap vs flatpak
+
+### Q: What is the difference between `apt`, `snap`, and `flatpak`?
+
+| Tool | Best For | Package Type | Scope | Updates | Notes |
+|------|----------|--------------|-------|---------|------|
+| `apt` | System packages, servers, libraries | `.deb` | Debian/Ubuntu | With system updates | Native and standard on Ubuntu |
+| `snap` | Desktop apps, newer versions, cross-distro installs | `snap` | Cross-distribution | Auto-updates by default | More isolated, often larger/slower |
+| `flatpak` | Desktop apps | `flatpak` bundles | Cross-distribution | Separate from system packages | Common for GUI apps, less common for server packages |
+
+### Q: What is the simple way to remember them?
+
+- `apt` = native Ubuntu package manager
+- `snap` = universal package format from Canonical
+- `flatpak` = universal package format mainly for desktop apps
+
+### Q: When should I use each one?
+
+- use `apt` for server and system software like `nginx`, `openssh-server`, and `curl`
+- use `snap` when you want a newer version or a cross-distro package like `code` or `spotify`
+- use `flatpak` mostly for desktop GUI applications
