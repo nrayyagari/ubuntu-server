@@ -169,6 +169,41 @@ At this exact moment:
 
 This is **demand paging** - memory is given "on demand."
 
+### Q: What is an offset in simple words?
+
+Think of memory as being divided into equal-size pages, usually `4KB` each.
+
+An address is split into:
+- **page number** = which page/block
+- **offset** = the exact position inside that page
+
+Example with page size `4096` bytes:
+- address `5000`
+- page number = `5000 / 4096`
+- offset = `5000 % 4096 = 904`
+
+So the **offset** just means: "where inside this page is the data?"
+
+### Q: What is a page fault in simple words?
+
+A **page fault** happens when a program tries to use a page that is not ready in RAM yet.
+
+Simple flow:
+1. Program touches memory
+2. CPU sees the page is not currently mapped the way it expects
+3. CPU pauses the program and asks the kernel for help
+4. Kernel sets up the mapping or loads the page
+5. Program continues
+
+Most page faults are **normal**. They happen because Linux uses demand paging and only prepares memory when it is first used.
+
+### Q: Is a page fault always an error?
+
+No.
+
+- **Normal page fault**: Linux brings in or maps the page, then the program continues
+- **Invalid page access**: the program touched bad memory and may crash with a segmentation fault
+
 ---
 
 ## 4. Memory Zones & Kernel vs User Space
