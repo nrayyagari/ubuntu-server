@@ -1,20 +1,43 @@
 # Memory Monitoring - Q&A
 
+## Top 5 Commands
+
+### Q: What are the top 5 commands to understand memory quickly?
+
+```bash
+free -h
+vmstat 1
+cat /proc/meminfo
+top
+ps aux --sort=-%mem | head
+```
+
+### Q: When do I use each one?
+
+| Command | Use |
+|---------|-----|
+| `free -h` | Quick memory and swap snapshot |
+| `vmstat 1` | Live memory, swap, I/O, CPU behavior |
+| `cat /proc/meminfo` | Full kernel memory details |
+| `top` | Live process-level memory usage |
+| `ps aux --sort=-%mem | head` | Top memory-consuming processes |
+
 ## Table of Contents
-1. [Memory Fundamentals](#1-memory-fundamentals)
-2. [How Linux Sees RAM](#2-how-linux-sees-ram)
-3. [Page Tables & Memory Translation](#3-page-tables--memory-translation)
-4. [Memory Zones & Kernel vs User Space](#4-memory-zones--kernel-vs-user-space)
-5. [How Memory Gets Consumed](#5-how-memory-gets-consumed)
-6. [The Page Cache (Why Cached Memory Exists)](#6-the-page-cache-why-cached-memory-exists)
-7. [Understanding Memory Metrics](#7-understanding-memory-metrics)
-8. [MemFree vs MemAvailable - Why Both Exist](#8-memfree-vs-memavailable---why-both-exist)
-9. [Active, Inactive, Buffers, Cached Explained](#9-active-inactive-buffers-cached-explained)
-10. [When Memory is Freed](#10-when-memory-is-freed)
-11. [Swap & Virtual Memory](#11-swap--virtual-memory)
-12. [The OOM Killer](#12-the-oom-killer)
-13. [Monitoring Commands](#13-monitoring-commands)
-14. [Quick Reference](#14-quick-reference)
+1. [Top 5 Commands](#top-5-commands)
+2. [Memory Fundamentals](#1-memory-fundamentals)
+3. [How Linux Sees RAM](#2-how-linux-sees-ram)
+4. [Page Tables & Memory Translation](#3-page-tables--memory-translation)
+5. [Memory Zones & Kernel vs User Space](#4-memory-zones--kernel-vs-user-space)
+6. [How Memory Gets Consumed](#5-how-memory-gets-consumed)
+7. [The Page Cache (Why Cached Memory Exists)](#6-the-page-cache-why-cached-memory-exists)
+8. [Understanding Memory Metrics](#7-understanding-memory-metrics)
+9. [MemFree vs MemAvailable - Why Both Exist](#8-memfree-vs-memavailable---why-both-exist)
+10. [Active, Inactive, Buffers, Cached Explained](#9-active-inactive-buffers-cached-explained)
+11. [When Memory is Freed](#10-when-memory-is-freed)
+12. [Swap & Virtual Memory](#11-swap--virtual-memory)
+13. [The OOM Killer](#12-the-oom-killer)
+14. [Monitoring Commands](#13-monitoring-commands)
+15. [Quick Reference](#14-quick-reference)
 
 ---
 
@@ -49,6 +72,29 @@ On most systems (x86_64, ARM64): **4096 bytes (4KB)**
 | IA64 (Itanium) | 4096 or 65536 |
 
 **Hugepages** are different - they're 2MB or 1GB instead of 4KB.
+
+### Q: What is the difference between pages and HugePages?
+
+| Type | Typical Size | Use |
+|------|--------------|-----|
+| **Normal page** | 4KB | Default Linux memory management |
+| **HugePage** | 2MB or 1GB | Large memory workloads with lower overhead |
+
+Linux always uses normal pages by default.
+
+**Why HugePages exist:** Linux manages memory in pages. If an application uses a lot of RAM, `4KB` pages create a lot of page-table entries and address-translation overhead. HugePages make the unit bigger, so Linux tracks fewer pages and the CPU does less translation work.
+
+HugePages are **optional** and are usually enabled only for memory-intensive workloads like:
+
+- PostgreSQL / Oracle
+- large JVMs
+- high-performance networking
+
+### Q: Do I need to install pages or HugePages?
+
+**Normal pages**: No, they already exist by default.
+
+**HugePages**: No installation, but you may need to **reserve/configure** them if an application needs them.
 
 ---
 
@@ -655,6 +701,20 @@ sudo swapon --priority 100 /swapfile
 /swapfile   none    swap    sw      0         0
 ```
 
+### Q: What is `/etc/fstab`?
+
+`/etc/fstab` is the **filesystem table**.
+
+It tells Linux what filesystems or swap areas to enable automatically at boot.
+
+Example:
+
+```fstab
+/swapfile   none    swap    sw      0         0
+```
+
+Meaning: "Enable this swap file automatically after reboot."
+
 ### Q: When should I use swap?
 
 | Scenario | Recommendation |
@@ -803,3 +863,79 @@ dmesg | grep -i "out of memory"
 | **Swap used** | Not enough RAM (fix this!) |
 
 **Everything else** (MemFree, Cached, Buffers) - Linux handles automatically. Don't worry about it.
+
+---
+
+## 15. Kubernetes Swap Notes
+
+### Q: Are pages just blocks of memory?
+
+Yes. A **page** is a fixed-size block of memory, usually **4KB** on Linux.
+
+A process does **not** live in RAM as one giant chunk. Its memory is split into many pages:
+
+- Some pages are **hot** (used often)
+- Some pages are **cold** (not used recently)
+
+### Q: Does Linux swap out whole processes?
+
+**No.** Linux usually swaps out **pages**, not entire processes.
+
+That means one process can be partly in RAM and partly in swap:
+
+```text
+Process A
+├── Page 1  -> RAM
+├── Page 2  -> RAM
+├── Page 3  -> Swap
+└── Page 4  -> Swap
+```
+
+### Q: Why is swap risky on Kubernetes nodes?
+
+Because Kubernetes wants memory pressure to be **predictable**.
+
+If swap is enabled:
+
+1. A process can look inactive, so some of its pages are moved to swap
+2. Later, that process becomes active again
+3. Now Linux must read those pages back from disk
+4. That delay can slow down important node components
+
+This is especially bad for:
+
+- `kubelet`
+- container runtime (`containerd`, `CRI-O`)
+- DNS
+- CNI/networking agents
+
+These components may be quiet for a while, but when needed, they must wake up **fast**.
+
+### Q: What is the noisy-neighbor risk with swap?
+
+One pod can consume too much memory and trigger reclaim/swap pressure for the **whole node**.
+
+Result:
+
+- Pod A uses too much memory
+- Linux starts reclaiming/swapping pages
+- Pod B or system daemons lose hot pages from RAM
+- Pod B becomes slow, even though Pod B did nothing wrong
+
+This is called a **noisy neighbor** problem.
+
+### Q: What is the short rule for Kubernetes?
+
+**Swap works technically, but it makes node behavior less deterministic.**
+
+Kubernetes generally prefers:
+
+- fast detection of memory pressure
+- clear eviction behavior
+- predictable OOM behavior
+
+instead of:
+
+- hidden slowdown
+- disk thrashing
+- delayed recovery
