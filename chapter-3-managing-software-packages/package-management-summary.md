@@ -8,6 +8,7 @@
 5. [APT Install Behavior](#5-apt-install-behavior)
 6. [apt autoremove](#6-apt-autoremove)
 7. [apt vs snap vs flatpak](#7-apt-vs-snap-vs-flatpak)
+8. [How to Add a deb Source](#8-how-to-add-a-deb-source)
 
 ---
 
@@ -183,3 +184,63 @@ This shows what would be removed without actually removing it.
 - use `apt` for server and system software like `nginx`, `openssh-server`, and `curl`
 - use `snap` when you want a newer version or a cross-distro package like `code` or `spotify`
 - use `flatpak` mostly for desktop GUI applications
+
+---
+
+## 8. How to Add a deb Source
+
+### Q: What is the modern way to add a third-party `deb` repository?
+
+Use:
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL <official-key-url> | sudo tee /etc/apt/keyrings/<repo>.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/<repo>.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/<repo>.gpg] <repo-url> <distribution> <component>" | \
+  sudo tee /etc/apt/sources.list.d/<repo>.list > /dev/null
+
+sudo apt update
+```
+
+### Q: What does each step do?
+
+1. `sudo install -m 0755 -d /etc/apt/keyrings`
+   - creates the keyrings directory if it does not already exist
+
+2. `curl -fsSL <official-key-url> | sudo tee /etc/apt/keyrings/<repo>.gpg > /dev/null`
+   - downloads the repository signing key from the vendor's official site
+   - saves it into `/etc/apt/keyrings/`
+
+3. `sudo chmod go+r /etc/apt/keyrings/<repo>.gpg`
+   - makes the key readable so `apt` can use it
+
+4. `echo "deb [...]" | sudo tee /etc/apt/sources.list.d/<repo>.list > /dev/null`
+   - adds a new repository source file under `/etc/apt/sources.list.d/`
+
+5. `sudo apt update`
+   - refreshes package metadata and verifies repository signatures
+
+### Q: What does the `deb` line mean?
+
+Example pattern:
+
+```bash
+deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/<repo>.gpg] <repo-url> <distribution> <component>
+```
+
+Meaning:
+
+- `deb` = binary package repository
+- `arch=...` = use packages only for your CPU architecture
+- `signed-by=...` = trust this repo only with that specific key
+- `<repo-url>` = repository URL
+- `<distribution>` = release codename or vendor label like `noble` or `stable`
+- `<component>` = repository section such as `main` or `stable`
+
+### Q: Why is this method preferred?
+
+- it avoids deprecated `apt-key`
+- it uses a dedicated key for each repo
+- it limits trust using `signed-by=...`
