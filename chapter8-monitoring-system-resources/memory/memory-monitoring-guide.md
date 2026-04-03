@@ -909,6 +909,38 @@ The key idea:
 
 **Healthy memory is not about a fixed percentage. It is healthy when the server still has enough available memory and is not actively swapping or hitting OOM.**
 
+### Q: Why can CPU be throttled, but memory usually cannot?
+
+Because CPU is a **time-based resource**, while memory is a **space-based resource**.
+
+- **CPU throttling** works by giving a process fewer CPU time slices
+- the process still runs, just more slowly
+- **memory** is different because the application needs actual space to hold data structures right now
+- if that space is not available, the process cannot just "run slower with less memory" in the same smooth way
+
+Result:
+
+- CPU pressure usually causes slower execution
+- memory pressure causes allocation failure, swapping, or OOM kills
+
+### Q: What about other resources like disk, network, and I/O?
+
+Some resources can be **rate-limited/throttled**, while others are mostly **capacity-limited**.
+
+| Resource | Type | What Happens Under Limit |
+|----------|------|--------------------------|
+| CPU | Rate / time | App runs slower |
+| Memory | Capacity / space | Swap, allocation failure, or OOM |
+| Disk I/O | Rate / throughput | Reads and writes become slower |
+| Network bandwidth | Rate / throughput | Requests and data transfer slow down |
+| Disk space | Capacity / space | Writes fail when full |
+| Inodes | Capacity / count | New files cannot be created |
+
+Short rule:
+
+- **Rate resources** like CPU, network, and disk I/O can often be throttled
+- **Capacity resources** like memory, disk space, and inodes are usually limited, not smoothly throttled
+
 ### Q: How to find which process uses most memory?
 
 ```bash
