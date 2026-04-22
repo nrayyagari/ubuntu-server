@@ -478,6 +478,38 @@ npm cache clean --force
 kubectl describe node | grep -A 10 "Conditions"
 ```
 
+### Q: What are the important things to check in `iostat -x`?
+
+Start with:
+```bash
+iostat -x 1 5
+```
+
+Focus on these columns first:
+
+| Column | What It Means | Practical Signal |
+|--------|----------------|------------------|
+| `%util` | Device busy time | Sustained `>70-80%` suggests saturation risk |
+| `r_await`, `w_await` | Read/write latency per request (ms) | Single-digit ms is usually healthy; sustained high double/triple digits is bad |
+| `aqu-sz` | Average queue depth | If consistently growing or `>1-2` for light workloads, device may be bottlenecked |
+| `%iowait` (CPU row) | CPU time waiting on storage | High + high disk latency/util usually confirms I/O bottleneck |
+| `r/s`, `w/s`, `rkB/s`, `wkB/s` | IOPS and throughput shape | Use for workload pattern, not as absolute "good/bad" alone |
+
+Quick interpretation pattern:
+1. Check `%util` (is device saturated?).
+2. Check `r_await`/`w_await` (is latency high?).
+3. Check `aqu-sz` (is queue building?).
+4. Correlate with CPU `%iowait`.
+5. Then use IOPS/throughput columns to understand the traffic profile.
+
+Example (from your sample):
+- `%util` around `0.40` on `vda` -> device is mostly idle.
+- `r_await 0.37 ms`, `w_await 1.44 ms` -> very low latency.
+- `aqu-sz 0.07` -> negligible queueing.
+- `%iowait 0.02` -> no storage wait pressure.
+
+Conclusion: no disk bottleneck indicated in that sample.
+
 ---
 
 ## 9. ncdu vs df vs du
