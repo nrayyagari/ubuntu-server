@@ -68,6 +68,18 @@ The four signals every SRE should monitor:
 | Azure | Standard | Premium SSD | Managed service abstracts hardware |
 | GCP | Standard | SSD, Extreme PD | You set capacity + IOPS |
 
+### Q: Why do people say "disk" in cloud if storage is virtual?
+
+Clouds expose **logical block devices** even though hardware is abstracted.
+
+| Cloud | Common Term | What You Actually Manage |
+|-------|-------------|--------------------------|
+| AWS | EBS **Volume** | Attached block volume |
+| Azure | Managed **Disk** | Attached managed disk |
+| GCP | Persistent **Disk** / Hyperdisk | Attached persistent disk |
+
+**Practical point**: "disk" is common language; "volume" is often the precise API term (especially in AWS EBS).
+
 ### Q: When do I need NVMe vs SSD?
 
 - **Boot volumes**: Cheap HDD fine
@@ -165,6 +177,20 @@ Two constraints even with SSD:
 --eviction-hard=imagefs.available<10%  # disk for images
 ```
 
+### Q: Are those values always the Kubernetes defaults?
+
+Not always. Common Linux defaults are typically:
+
+```yaml
+memory.available<100Mi
+nodefs.available<10%
+imagefs.available<15%
+nodefs.inodesFree<5%
+imagefs.inodesFree<5%
+```
+
+If you set custom values (for example `imagefs.available<10%`), those are cluster/node-specific tuning choices.
+
 ### Q: Why do disk problems cause cascading failures?
 
 1. Node hits disk pressure
@@ -172,6 +198,16 @@ Two constraints even with SSD:
 3. Pods reschedule to other nodes
 4. Other nodes get overloaded
 5. Cluster becomes unstable
+
+### Q: Where are inode eviction thresholds watched in Kubernetes?
+
+On each node by **kubelet** (node-local eviction manager), not by the scheduler.
+
+Kubelet tracks signals like:
+- `nodefs.inodesFree`
+- `imagefs.inodesFree`
+
+When thresholds are crossed, kubelet can mark disk pressure and evict pods.
 
 ---
 
@@ -220,6 +256,39 @@ find / -inum 123456
 
 # Which directory has most inodes
 find / -xdev -printf '%i\n' | sort | uniq -c | sort -rn | head
+```
+
+### Q: How do I read `ls -li` output fields?
+
+Example:
+```bash
+2112 -rw-r--r-- 1 laborant laborant 17733 Apr 22 02:27 AGENTS.md
+```
+
+Field order:
+1. inode number (`2112`)
+2. permissions/type (`-rw-r--r--`)
+3. hard link count (`1`)
+4. owner (`laborant`)
+5. group (`laborant`)
+6. size in bytes (`17733`)
+7. timestamp (`Apr 22 02:27`)
+8. filename (`AGENTS.md`)
+
+### Q: Why does a symlink show a different inode than its target?
+
+Because the symlink itself is its own filesystem object with its own inode.
+
+Example:
+```bash
+48772 lrwxrwxrwx ... CLAUDE.md -> /home/laborant/AGENTS.md
+```
+
+`48772` is inode of `CLAUDE.md` (the link object), not the target file inode.
+
+Use this to show target details via the link path:
+```bash
+ls -liL CLAUDE.md
 ```
 
 ### Q: What causes inode exhaustion?
@@ -275,6 +344,41 @@ tmpfs           803M  4.0K  803M    1% /run/user/1001 → User temp space (RAM)
 
 **Key insight**: `tmpfs` entries are in RAM - they don't use disk space!
 
+### Q: If I `cd /` on Linux, is that a disk or a volume?
+
+`/` is the **root filesystem mount point**.
+
+On EC2 it is usually backed by the root EBS volume, so both statements can be true:
+- Linux view: root filesystem
+- Cloud view: root volume
+
+### Q: In AWS, what is OS disk vs data disk?
+
+Both are usually EBS volumes; difference is role:
+- **OS disk** = root/boot volume (contains OS and boot files)
+- **Data disk** = additional non-root volumes for app data/logs/db
+
+### Q: If I attach an EBS volume, is it auto-mounted in Linux?
+
+Usually **no**. Attach makes block device visible, but you normally still must:
+1. detect device (`lsblk`)
+2. format if new (`mkfs`, one-time)
+3. mount (`mount /dev/... /data`)
+4. persist (`/etc/fstab` with UUID)
+
+### Q: When does auto-mount happen?
+
+Only when preconfigured automation exists, for example:
+- custom AMI with startup mount logic
+- cloud-init user-data scripts
+- provisioning tools (Ansible/Terraform scripts)
+
+Without that, attached volume is present but not mounted to a filesystem path.
+
+### Q: Is an attached-but-unmounted volume useful?
+
+Not for normal file-path access by apps/users. It exists as a block device, but typical workloads need filesystem + mount point.
+
 ---
 
 ## 7. Log Rotation
@@ -305,6 +409,36 @@ app.log → app.log.1 → app.log.2 → app.log.3 (deleted)
 - App crashes (can't write logs)
 - Inode exhaustion (millions of small log files)
 - Node becomes unresponsive
+
+### Q: How do I configure log rotation in practice?
+
+Typical `/etc/logrotate.d/myapp` example:
+
+```conf
+/var/log/myapp/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 myapp myapp
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP myapp.service >/dev/null 2>&1 || true
+    endscript
+}
+```
+
+### Q: What are common log rotation best practices?
+
+1. Rotate by time and/or size (`daily`, `weekly`, `size 100M`).
+2. Keep bounded history (`rotate N`) and compress old logs.
+3. Ensure applications reopen log files after rotation (`HUP` or app-specific signal).
+4. Set correct ownership and permissions for newly created log files (`create`).
+5. Test config safely before rollout (`logrotate -d`, then controlled `-f`).
+6. Monitor both disk space and inode usage (`df -h`, `df -i`).
+7. For containerized workloads, prefer stdout/stderr with centralized logging.
 
 ---
 
