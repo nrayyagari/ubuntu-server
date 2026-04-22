@@ -5,10 +5,11 @@
 2. [When Newer Package Versions Arrive](#2-when-newer-package-versions-arrive)
 3. [Native Packages vs Universal Packages](#3-native-packages-vs-universal-packages)
 4. [Common Snap Packages](#4-common-snap-packages)
-5. [APT Install Behavior](#5-apt-install-behavior)
-6. [apt autoremove](#6-apt-autoremove)
-7. [apt vs snap vs flatpak](#7-apt-vs-snap-vs-flatpak)
-8. [How to Add a deb Source](#8-how-to-add-a-deb-source)
+5. [dpkg vs apt](#5-dpkg-vs-apt)
+6. [APT Install Behavior](#6-apt-install-behavior)
+7. [apt autoremove](#7-apt-autoremove)
+8. [apt vs snap vs flatpak](#8-apt-vs-snap-vs-flatpak)
+9. [How to Add a deb Source](#9-how-to-add-a-deb-source)
 
 ---
 
@@ -103,7 +104,48 @@ Developer and server-related snaps are also common:
 
 ---
 
-## 5. APT Install Behavior
+## 5. dpkg vs apt
+
+### Q: What is the difference between `dpkg` and `apt`?
+
+- `dpkg` is the low-level package tool for `.deb` files.
+- `apt` is a high-level package manager that uses `dpkg` underneath.
+
+### Q: What can `dpkg` do?
+
+- install/remove/query local `.deb` packages
+- inspect package metadata and file lists
+- it does **not** resolve dependencies from repositories
+
+Examples:
+
+```bash
+sudo dpkg -i ./package-name_1.2.3_amd64.deb
+sudo dpkg -l | grep nginx
+```
+
+### Q: What can `apt` do?
+
+- installs packages from configured repositories
+- resolves dependencies automatically
+- downloads packages, updates package indexes, and upgrades installed software
+
+Examples:
+
+```bash
+sudo apt update
+sudo apt install nginx
+sudo apt upgrade
+```
+
+### Q: Which should I use day to day?
+
+- use `apt` for normal package management
+- use `dpkg` when you need direct/manual control over a specific `.deb` file
+
+---
+
+## 6. APT Install Behavior
 
 ### Q: Does `apt install apache2 -y` install suggested packages too?
 
@@ -136,7 +178,7 @@ It normally does **not** install suggested packages.
 
 ---
 
-## 6. apt autoremove
+## 7. apt autoremove
 
 ### Q: What does `apt autoremove` do?
 
@@ -163,7 +205,7 @@ This shows what would be removed without actually removing it.
 
 ---
 
-## 7. apt vs snap vs flatpak
+## 8. apt vs snap vs flatpak
 
 ### Q: What is the difference between `apt`, `snap`, and `flatpak`?
 
@@ -187,7 +229,7 @@ This shows what would be removed without actually removing it.
 
 ---
 
-## 8. How to Add a deb Source
+## 9. How to Add a deb Source
 
 ### Q: What is the modern way to add a third-party `deb` repository?
 
@@ -238,6 +280,33 @@ Meaning:
 - `<repo-url>` = repository URL
 - `<distribution>` = release codename or vendor label like `noble` or `stable`
 - `<component>` = repository section such as `main` or `stable`
+
+### Q: Real example: Google Chrome third-party repository
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | \
+  gpg --dearmor | sudo tee /etc/apt/keyrings/google-chrome.gpg > /dev/null
+sudo chmod go+r /etc/apt/keyrings/google-chrome.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" | \
+  sudo tee /etc/apt/sources.list.d/google-chrome.list > /dev/null
+
+sudo apt update
+sudo apt install google-chrome-stable
+```
+
+### Q: Why add a third-party repo in the first place?
+
+- the software may not exist in the official Ubuntu repository
+- you may need a newer vendor-provided version
+- you may want automatic updates through `apt upgrade`
+
+### Q: Why should you be cautious with third-party repos?
+
+- each added repo extends your trust/supply-chain risk
+- dependency conflicts can happen
+- extra repositories increase maintenance overhead
 
 ### Q: Why is this method preferred?
 
